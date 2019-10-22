@@ -6,6 +6,7 @@ from loguru import logger
 import sys
 import re
 
+
 @pytest.mark.parametrize(
     "time_format, date, expected",
     [
@@ -31,6 +32,23 @@ import re
         ("[YYYY] MM [DD]", (2018, 2, 3, 11, 9, 0, 2), "YYYY 02 DD"),
         ("[YYYY MM DD]", (2018, 1, 3, 11, 3, 4, 2), "[2018 01 03]"),
         ("[[YY]]", (2018, 1, 3, 11, 3, 4, 2), "[YY]"),
+        ("[]", (2018, 1, 3, 11, 3, 4, 2), "[]"),
+#        ("[HHmmss", (2018, 1, 3, 11, 3, 4, 2), "[110304"),  # Fail PyPy
+        ("HHmmss]", (2018, 1, 3, 11, 3, 4, 2), "110304]"),
+        ("HH:mm:ss!UTC", (2018, 1, 1, 11, 30, 0, 0, "A", 7200), "09:30:00"),
+        ("UTC! HH:mm:ss", (2018, 1, 1, 11, 30, 0, 0, "A", 7200), "UTC! 11:30:00"),
+        ("!UTC HH:mm:ss", (2018, 1, 1, 11, 30, 0, 0, "A", 7200), "!UTC 11:30:00"),
+        (
+            "hh:mm:ss A - Z ZZ !UTC",
+            (2018, 1, 1, 12, 30, 0, 0, "A", 5400),
+            "11:00:00 AM - +00:00 +0000 ",
+        ),
+        (
+            "YYYY-MM-DD HH:mm:ss[Z]!UTC",
+            (2018, 1, 3, 11, 3, 4, 2, "XYZ", -7200),
+            "2018-01-03 13:03:04Z",
+        ),
+        ("HH:mm:ss[!UTC]", (2018, 1, 1, 11, 30, 0, 0, "A", 7200), "11:30:00!UTC"),
     ],
 )
 def test_formatting(writer, monkeypatch_date, time_format, date, expected):
@@ -39,6 +57,16 @@ def test_formatting(writer, monkeypatch_date, time_format, date, expected):
     logger.debug("X")
     result = writer.read()
     assert result == expected + "\n"
+
+
+def test_formatting_utc_name(writer):
+    logger.add(writer, format="{time:zz!UTC}")
+    logger.debug("X")
+    result = writer.read()
+    if sys.version_info < (3, 6):
+        assert result == "UTC+00:00\n"
+    else:
+        assert result == "UTC\n"
 
 
 def test_locale_formatting(writer, monkeypatch_date):
@@ -69,9 +97,7 @@ def test_file_formatting(monkeypatch_date, tmpdir):
 
 
 def test_missing_struct_time_fields(writer, monkeypatch, monkeypatch_date):
-
     class struct_time:
-
         def __init__(self, struct):
             self._struct = struct
 
@@ -79,7 +105,6 @@ def test_missing_struct_time_fields(writer, monkeypatch, monkeypatch_date):
             if attr in {"tm_gmtoff", "tm_zone"}:
                 raise AttributeError
             return getattr(self._struct, attr)
-
 
     def localtime(*args, **kwargs):
         local = time.localtime(*args, **kwargs)
